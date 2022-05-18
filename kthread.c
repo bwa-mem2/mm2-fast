@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <stdint.h>
+#include <cassert>
 #include "kthread.h"
 
 #if (defined(WIN32) || defined(_WIN32)) && defined(_MSC_VER)
@@ -96,11 +97,13 @@ typedef struct ktp_t {
 
 static void *ktp_worker(void *data)
 {
+	int res;
 	ktp_worker_t *w = (ktp_worker_t*)data;
 	ktp_t *p = w->pl;
 	while (w->step < p->n_steps) {
 		// test whether we can kick off the job with this worker
-		pthread_mutex_lock(&p->mutex);
+		res = pthread_mutex_lock(&p->mutex);
+		assert((res == 0));
 		for (;;) {
 			int i;
 			// test whether another worker is doing the same step
@@ -110,19 +113,29 @@ static void *ktp_worker(void *data)
 					break;
 			}
 			if (i == p->n_workers) break; // no workers with smaller indices are doing w->step or the previous steps
-			pthread_cond_wait(&p->cv, &p->mutex);
+			// klocwork fix;
+			res = pthread_cond_wait(&p->cv, &p->mutex);
+			assert((res == 0));
 		}
-		pthread_mutex_unlock(&p->mutex);
+		// klocwork fix;
+		res = pthread_mutex_unlock(&p->mutex);
+		assert((res == 0));
 
 		// working on w->step
 		w->data = p->func(p->shared, w->step, w->step? w->data : 0); // for the first step, input is NULL
 
 		// update step and let other workers know
-		pthread_mutex_lock(&p->mutex);
+		// klocwork fix;
+		res = pthread_mutex_lock(&p->mutex);
+		assert((res == 0));
+		
 		w->step = w->step == p->n_steps - 1 || w->data? (w->step + 1) % p->n_steps : p->n_steps;
 		if (w->step == 0) w->index = p->index++;
-		pthread_cond_broadcast(&p->cv);
-		pthread_mutex_unlock(&p->mutex);
+		// klocwork fix;
+		res = pthread_cond_broadcast(&p->cv);
+		assert((res == 0));
+		res = pthread_mutex_unlock(&p->mutex);
+		assert((res == 0));
 	}
 	pthread_exit(0);
 }
@@ -132,15 +145,18 @@ void kt_pipeline(int n_threads, void *(*func)(void*, int, void*), void *shared_d
 	ktp_t aux;
 	pthread_t *tid;
 	int i;
-
+	int res;
 	if (n_threads < 1) n_threads = 1;
 	aux.n_workers = n_threads;
 	aux.n_steps = n_steps;
 	aux.func = func;
 	aux.shared = shared_data;
 	aux.index = 0;
-	pthread_mutex_init(&aux.mutex, 0);
-	pthread_cond_init(&aux.cv, 0);
+	// klocwork fix;
+	res = pthread_mutex_init(&aux.mutex, 0);
+	assert((res == 0));
+	res = pthread_cond_init(&aux.cv, 0);
+	assert((res == 0));
 
 	aux.workers = (ktp_worker_t*)calloc(n_threads, sizeof(ktp_worker_t));
 	for (i = 0; i < n_threads; ++i) {
@@ -153,7 +169,9 @@ void kt_pipeline(int n_threads, void *(*func)(void*, int, void*), void *shared_d
 	for (i = 0; i < n_threads; ++i) pthread_create(&tid[i], 0, ktp_worker, &aux.workers[i]);
 	for (i = 0; i < n_threads; ++i) pthread_join(tid[i], 0);
 	free(tid); free(aux.workers);
-
-	pthread_mutex_destroy(&aux.mutex);
-	pthread_cond_destroy(&aux.cv);
+	// klocwork fix;
+	res = pthread_mutex_destroy(&aux.mutex);
+	assert((res == 0));
+	res = pthread_cond_destroy(&aux.cv);
+	assert((res == 0));
 }

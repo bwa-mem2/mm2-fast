@@ -1,3 +1,33 @@
+
+/* The MIT License
+
+Copyright (c) 2018-     Dana-Farber Cancer Institute
+              2017-2018 Broad Institute, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+Modified Copyright (C) 2021 Intel Corporation
+   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>; 
+	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
+	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
+*/
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -9,6 +39,12 @@
 #include "mmpriv.h"
 #include "bseq.h"
 #include "khash.h"
+#include <x86intrin.h>
+
+#ifdef MANUAL_PROFILING
+extern uint64_t minimizer_lookup_time;
+extern uint64_t rmq_time;
+#endif
 
 struct mm_tbuf_s {
 	void *km;
@@ -113,10 +149,10 @@ static mm128_t *collect_seed_hits_heap(void *km, const mm_mapopt_t *opt, int max
 	mm128_t *a, *heap;
 
 	m = mm_collect_matches(km, &n_m, qlen, max_occ, opt->max_max_occ, opt->occ_dist, mi, mv, n_a, rep_len, n_mini_pos, mini_pos);
-
 	heap = (mm128_t*)kmalloc(km, n_m * sizeof(mm128_t));
+	//klocwork fix
+	memset(heap, 0, n_m * sizeof(mm128_t));
 	a = (mm128_t*)kmalloc(km, *n_a * sizeof(mm128_t));
-
 	for (i = 0, heap_size = 0; i < n_m; ++i) {
 		if (m[i].n > 0) {
 			heap[heap_size].x = m[i].cr[0];
@@ -173,6 +209,9 @@ static mm128_t *collect_seed_hits_heap(void *km, const mm_mapopt_t *opt, int max
 static mm128_t *collect_seed_hits(void *km, const mm_mapopt_t *opt, int max_occ, const mm_idx_t *mi, const char *qname, const mm128_v *mv, int qlen, int64_t *n_a, int *rep_len,
 								  int *n_mini_pos, uint64_t **mini_pos)
 {
+#ifdef MANUAL_PROFILING
+	uint64_t lookup_start = __rdtsc();
+#endif
 	int i, n_m;
 	mm_seed_t *m;
 	mm128_t *a;
@@ -205,6 +244,9 @@ static mm128_t *collect_seed_hits(void *km, const mm_mapopt_t *opt, int max_occ,
 	}
 	kfree(km, m);
 	radix_sort_128x(a, a + (*n_a));
+#ifdef MANUAL_PROFILING
+	minimizer_lookup_time += __rdtsc() - lookup_start;
+#endif
 	return a;
 }
 
@@ -240,6 +282,9 @@ void mm_map_frag(const mm_idx_t *mi, int n_segs, const int *qlens, const char **
 	mm128_v mv = {0,0,0};
 	mm_reg1_t *regs0;
 	km_stat_t kmst;
+
+	//klocwork fix
+	//assert(n_segs == 1);
 
 	for (i = 0, qlen_sum = 0; i < n_segs; ++i)
 		qlen_sum += qlens[i], n_regs[i] = 0, regs[i] = 0;
@@ -413,6 +458,8 @@ static void worker_for(void *_data, long i, int tid) // kt_for() callback
 	double t = 0.0;
 	mm_tbuf_t *b = s->buf[tid];
 	assert(s->n_seg[i] <= MM_MAX_SEG);
+	//klocwork fix
+	memset(&qlens[0], 0, MM_MAX_SEG*sizeof(int));
 	if (mm_dbg_flag & MM_DBG_PRINT_QNAME) {
 		fprintf(stderr, "QR\t%s\t%d\t%d\n", s->seq[off].name, tid, s->seq[off].l_seq);
 		t = realtime();
@@ -485,9 +532,14 @@ static void merge_hits(step_t *s)
 					mm_reg1_t *r = &s->reg[k][l];
 					uint32_t capacity;
 					mm_err_fread(r, sizeof(mm_reg1_t), 1, fp[j]);
+					//klocwork fix
+					assert(INT_MIN <= r->rid && r->rid <= INT_MAX);
 					r->rid += s->p->rid_shift[j];
 					if (opt->flag & MM_F_CIGAR) {
 						mm_err_fread(&capacity, 4, 1, fp[j]);
+			
+						//klocwork fix
+						assert(0 <= capacity && capacity <= UINT_MAX);
 						r->p = (mm_extra_t*)calloc(capacity, 4);
 						r->p->capacity = capacity;
 						mm_err_fread(r->p, r->p->capacity, 4, fp[j]);
@@ -563,6 +615,7 @@ static void *worker_pipeline(void *shared, int step, void *in)
 		if ((p->opt->flag & MM_F_OUT_CS) && !(mm_dbg_flag & MM_DBG_NO_KALLOC)) km = km_init();
 		for (k = 0; k < s->n_frag; ++k) {
 			int seg_st = s->seg_off[k], seg_en = s->seg_off[k] + s->n_seg[k];
+#ifndef DISABLE_OUTPUT
 			for (i = seg_st; i < seg_en; ++i) {
 				mm_bseq1_t *t = &s->seq[i];
 				if (p->opt->split_prefix && p->n_parts == 0) { // then write to temporary files
@@ -597,6 +650,7 @@ static void *worker_pipeline(void *shared, int step, void *in)
 					mm_err_puts(p->str.s);
 				}
 			}
+#endif
 			for (i = seg_st; i < seg_en; ++i) {
 				for (j = 0; j < s->n_reg[i]; ++j) free(s->reg[i][j].p);
 				free(s->reg[i]);
@@ -678,10 +732,13 @@ int mm_split_merge(int n_segs, const char **fn, const mm_mapopt_t *opt, int n_sp
 	pl.n_parts = n_split_idx;
 	pl.fp_parts  = CALLOC(FILE*, pl.n_parts);
 	pl.rid_shift = CALLOC(uint32_t, pl.n_parts);
+
 	pl.mi = mi = mm_split_merge_prep(opt->split_prefix, n_split_idx, pl.fp_parts, pl.rid_shift);
 	if (pl.mi == 0) {
 		free(pl.fp_parts);
 		free(pl.rid_shift);
+		//klocwork fix : doubtful
+		free(pl.fp);
 		return -1;
 	}
 	for (i = n_split_idx - 1; i > 0; --i)

@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+//klocwork fix
+#include <climits>
 #include "mmpriv.h"
 
 FILE *mm_split_init(const char *prefix, const mm_idx_t *mi)
@@ -63,6 +65,8 @@ mm_idx_t *mm_split_merge_prep(const char *prefix, int n_splits, FILE **fp, uint3
 		for (k = 0; k < n_seq_part[i]; ++k, ++j) {
 			uint32_t l;
 			mm_err_fread(&l, 1, 4, fp[i]);
+			//klocwork fix
+			assert(0 <= l && l < UINT_MAX);
 			mi->seq[j].name = (char*)calloc(l + 1, 1);
 			mm_err_fread(mi->seq[j].name, 1, l, fp[i]);
 			mm_err_fread(&mi->seq[j].len, 4, 1, fp[i]);

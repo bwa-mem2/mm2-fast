@@ -1,3 +1,32 @@
+/* The MIT License
+
+Copyright (c) 2018-     Dana-Farber Cancer Institute
+              2017-2018 Broad Institute, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+Modified Copyright (C) 2021 Intel Corporation
+   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>; 
+	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
+	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
+*/
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
@@ -5,6 +34,13 @@
 #include "minimap.h"
 #include "mmpriv.h"
 #include "ksw2.h"
+#include "ksw2_extd2_avx.h"
+#include <x86intrin.h>
+extern uint64_t avg;
+extern uint64_t alignment_time;
+extern void *km1;
+extern uint64_t km_size;// = 500000000; // 500 MB
+extern int km_top;
 
 static void ksw_gen_simple_mat(int m, int8_t *mat, int8_t a, int8_t b, int8_t sc_ambi)
 {
@@ -301,6 +337,8 @@ static void mm_append_cigar(mm_reg1_t *r, uint32_t n_cigar, uint32_t *cigar) // 
 		r->p->capacity = r->p->n_cigar + n_cigar + sizeof(mm_extra_t)/4;
 		kroundup32(r->p->capacity);
 		r->p = (mm_extra_t*)realloc(r->p, r->p->capacity * 4);
+		//klocwork fix
+		assert(r->p);
 	}
 	p = r->p;
 	if (p->n_cigar > 0 && (p->cigar[p->n_cigar-1]&0xf) == (cigar[0]&0xf)) { // same CIGAR op at the boundary
@@ -313,6 +351,7 @@ static void mm_append_cigar(mm_reg1_t *r, uint32_t n_cigar, uint32_t *cigar) // 
 	}
 }
 
+#if 0
 static void mm_align_pair(void *km, const mm_mapopt_t *opt, int qlen, const uint8_t *qseq, int tlen, const uint8_t *tseq, const uint8_t *junc, const int8_t *mat, int w, int end_bonus, int zdrop, int flag, ksw_extz_t *ez)
 {
 	if (mm_dbg_flag & MM_DBG_PRINT_ALN_SEQ) {
@@ -340,7 +379,65 @@ static void mm_align_pair(void *km, const mm_mapopt_t *opt, int qlen, const uint
 		fprintf(stderr, "\n");
 	}
 }
+#endif
+#if 1
+static void mm_align_pair(void *km, const mm_mapopt_t *opt, int qlen, const uint8_t *qseq, int tlen, const uint8_t *tseq, const uint8_t *junc, const int8_t *mat, int w, int end_bonus, int zdrop, int flag, ksw_extz_t *ez)
+{
+#ifdef MANUAL_PROFILING
+	uint64_t align_start = __rdtsc();
+#endif
 
+	if (mm_dbg_flag & MM_DBG_PRINT_ALN_SEQ) {
+		int i;
+		fprintf(stderr, "===> q=(%d,%d), e=(%d,%d), bw=%d, flag=%d, zdrop=%d <===\n", opt->q, opt->q2, opt->e, opt->e2, w, flag, opt->zdrop);
+		for (i = 0; i < tlen; ++i) fputc("ACGTN"[tseq[i]], stderr);
+		fputc('\n', stderr);
+		for (i = 0; i < qlen; ++i) fputc("ACGTN"[qseq[i]], stderr);
+		fputc('\n', stderr);
+	}
+	if (opt->max_sw_mat > 0 && (int64_t)tlen * qlen > opt->max_sw_mat) {
+		ksw_reset_extz(ez);
+		ez->zdropped = 1;
+	} else if (opt->flag & MM_F_SPLICE)
+		ksw_exts2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->noncan, zdrop, opt->junc_bonus, flag, junc, ez);
+	else if (opt->q == opt->q2 && opt->e == opt->e2)
+		ksw_extz2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, w, zdrop, end_bonus, flag, ez);
+	else{
+#if defined (ALIGN_AVX) && (defined(__AVX512BW__) || (defined(__AVX2__) && defined(APPLY_AVX2)))
+#ifdef __AVX512BW__
+		
+            	ksw_extd2_avx512(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->e2, w, zdrop, end_bonus, flag, ez);
+#elif __AVX2__
+	avg = 0;
+//	uint64_t *ptr_km = (uint64_t *) km1;
+//	for(uint64_t itr = 0; itr < km_size/512; itr++){
+//		avg+=ptr_km[itr];
+//	}
+
+//#ifdef MANUAL_PROFILING
+//	uint64_t align_start = __rdtsc();
+//#endif
+		ksw_extd2_avx2(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->e2, w, zdrop, end_bonus, flag, ez);
+//#ifdef MANUAL_PROFILING
+//	alignment_time += (__rdtsc() - align_start);
+//#endif
+#endif
+#else
+		ksw_extd2_sse(km, qlen, qseq, tlen, tseq, 5, mat, opt->q, opt->e, opt->q2, opt->e2, w, zdrop, end_bonus, flag, ez);
+#endif
+	   }
+	if (mm_dbg_flag & MM_DBG_PRINT_ALN_SEQ) {
+		int i;
+		fprintf(stderr, "score=%d, cigar=", ez->score);
+		for (i = 0; i < ez->n_cigar; ++i)
+			fprintf(stderr, "%d%c", ez->cigar[i]>>4, "MIDN"[ez->cigar[i]&0xf]);
+		fprintf(stderr, "\n");
+	}
+#ifdef MANUAL_PROFILING
+	alignment_time += (__rdtsc() - align_start);
+#endif
+}
+#endif
 static inline int mm_get_hplen_back(const mm_idx_t *mi, uint32_t rid, uint32_t x)
 {
 	int64_t i, off0 = mi->seq[rid].offset, off = off0 + x;
@@ -885,6 +982,8 @@ end_align1_inv:
 static inline mm_reg1_t *mm_insert_reg(const mm_reg1_t *r, int i, int *n_regs, mm_reg1_t *regs)
 {
 	regs = (mm_reg1_t*)realloc(regs, (*n_regs + 1) * sizeof(mm_reg1_t));
+	//klocwork fix
+	assert(regs);
 	if (i + 1 != *n_regs)
 		memmove(&regs[i + 2], &regs[i + 1], sizeof(mm_reg1_t) * (*n_regs - i - 1));
 	regs[i + 1] = *r;

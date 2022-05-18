@@ -1,3 +1,34 @@
+
+/* The MIT License
+
+Copyright (c) 2018-     Dana-Farber Cancer Institute
+              2017-2018 Broad Institute, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+Modified Copyright (C) 2021 Intel Corporation
+   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>; 
+	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
+	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
+*/
+
 #include <stdlib.h>
 #include <assert.h>
 #if defined(WIN32) || defined(_WIN32)
@@ -14,6 +45,24 @@
 #include "mmpriv.h"
 #include "kvec.h"
 #include "khash.h"
+#include <map>
+#include <fstream>
+#include <vector>
+#include <algorithm>
+#include <x86intrin.h>
+using namespace std;
+//klocwork fix
+#define validate_int(x) (assert(INT_MIN <= x && x <= INT_MAX));
+#define validate_uint(x) (assert(0 <= x && x <= UINT_MAX));
+#define validate_ulong(x) (assert(0 <= x && x <= ULONG_MAX));
+
+extern uint64_t minimizer_lookup_time, alignment_time, dp_time, rmq_time, rmq_t1, rmq_t2, rmq_t3, rmq_t4;
+#ifdef LISA_HASH
+#include "lisa_hash.h"
+extern lisa_hash<uint64_t, uint64_t> *lh;
+#endif
+
+
 
 #define idx_hash(a) ((a)>>1)
 #define idx_eq(a, b) ((a)>>1 == (b)>>1)
@@ -52,9 +101,43 @@ mm_idx_t *mm_idx_init(int w, int k, int b, int flag)
 	if (!(mm_dbg_flag & 1)) mi->km = km_init();
 	return mi;
 }
+void mm_idx_destroy_mm_hash(mm_idx_t *mi)
+{
+	//fprintf(stderr, "mm_destroy_hash\n");
+	uint32_t i;
+	if (mi == 0) return;
+	if (mi->h) kh_destroy(str, (khash_t(str)*)mi->h);
+	if (mi->B) {
+		for (i = 0; i < 1U<<mi->b; ++i) {
+			free(mi->B[i].p);
+			free(mi->B[i].a.a);
+			kh_destroy(idx, (idxhash_t*)mi->B[i].h);
+		}
+	}
+}
+void mm_idx_destroy_seq(mm_idx_t *mi)
+{
+	//fprintf(stderr, "mm_destroy_seq\n");
+
+	uint32_t i;
+	if (mi == 0) return;
+	if (mi->I) {
+		for (i = 0; i < mi->n_seq; ++i)
+			free(mi->I[i].a);
+		free(mi->I);
+	}
+	if (!mi->km) {
+		for (i = 0; i < mi->n_seq; ++i)
+			free(mi->seq[i].name);
+		free(mi->seq);
+	} else km_destroy(mi->km);
+	free(mi->B); free(mi->S); free(mi);
+}
+
 
 void mm_idx_destroy(mm_idx_t *mi)
 {
+
 	uint32_t i;
 	if (mi == 0) return;
 	if (mi->h) kh_destroy(str, (khash_t(str)*)mi->h);
@@ -96,6 +179,150 @@ const uint64_t *mm_idx_get(const mm_idx_t *mi, uint64_t minier, int *n)
 		return &b->p[kh_val(h, k)>>32];
 	}
 }
+//Output minimap2's hash table entries
+class hash_entry {
+	public: 
+	uint64_t key;
+	uint64_t n;
+	uint64_t *p;
+	hash_entry(uint64_t k, uint64_t n_, uint64_t *p_){
+		key = k;
+		n = n_;
+		p = p_;
+	}
+
+};
+bool key_sort( hash_entry i1, hash_entry i2)
+{
+    return (i1.key < i2.key);
+} 
+
+
+void mm_idx_dump_hash(const char* f_name, const mm_idx_t *mi)  
+{
+	uint64_t tic = __rdtsc();
+	//std::map<uint64_t, vector<uint64_t>> m;
+	std::vector<hash_entry> v_hash;
+
+	//ofstream f(f_name);
+	fprintf(stderr, "Building sorted key-val map\n");
+
+	uint32_t i,j;
+	uint64_t num_values = 0;
+	for (i = 0; i < 1U<<mi->b; ++i) {
+		
+		
+		//fprintf(stderr, "BucketID %lu \n", i);
+		idxhash_t *h = (idxhash_t*)mi->B[i].h;
+		khint_t k;
+		if (h == 0) continue;
+		for (k = 0; k < kh_end(h); ++k){
+			if (kh_exist(h, k)) {
+				uint64_t key = kh_key(h, k), bucket_id = i;
+				key = key>>1;
+				
+				key = key<<mi->b | bucket_id;
+				
+				if(kh_key(h, k)&1)
+				{
+					//print key value
+					//fprintf(stderr, "%llu %llu %llu\n", key, kh_val(h, k), 0);
+					//m[key].push_back(kh_val(h, k));
+					v_hash.push_back(hash_entry(key, kh_val(h, k), NULL));
+				}
+				else
+				{	// print key
+					uint32_t n = (uint32_t)kh_val(h, k);
+					//fprintf(stderr, "%llu %llu %llu ", key, kh_val(h, k), n);
+					// for 0 to lsb 32 val
+					//  print b->p[msb 32 of val]
+					
+					v_hash.push_back(hash_entry(key, n, &mi->B[i].p[(kh_val(h, k)>>32) + 0]));
+				}
+			}
+		}
+	}
+	sort(v_hash.begin(), v_hash.end(), key_sort);
+	fprintf(stderr, "Sorted map building time = %lld \n", __rdtsc() - tic);
+	fprintf(stderr, "Storing hash to %s \n", f_name);
+	tic = __rdtsc();
+
+	vector<uint64_t> key_list;
+	vector<uint64_t> val_list;
+	vector<uint64_t> p_list;
+/*
+	key_list.push_back(m.size());	
+	for(auto k : m){
+		key_list.push_back(k.first);
+		f<<k.first << " "<<k.second.size()<<endl;
+		for(int j = 0; j < k.second.size(); j++){
+			f<<k.second[j]<<" ";
+			num_values++;
+		}
+		f<<endl;
+	}
+*/
+
+
+	key_list.push_back(v_hash.size());
+	int64_t itr_p = 0;
+	uint64_t sum_pos = 0;
+	string f1_name = (string)f_name + "_pos_bin";
+	string f2_name = (string)f_name + "_val_bin";
+	ofstream f1(f1_name, ios::out | ios::binary);
+	ofstream f2(f2_name, ios::out | ios::binary);
+	for( int i = 0; i < v_hash.size(); i++){
+		key_list.push_back(v_hash[i].key);
+		if(v_hash[i].p == NULL){	
+			//f<<v_hash[i].key << " "<<1<<"\n"<<v_hash[i].n<<" \n";
+			val_list.push_back(sum_pos<<32|(uint64_t)1);
+			sum_pos+=1;
+			p_list.push_back(v_hash[i].n);
+			num_values++;
+			continue;
+		}
+		
+		//f<<v_hash[i].key << " "<<v_hash[i].n<<endl;
+		val_list.push_back(sum_pos<<32|(uint64_t)v_hash[i].n);
+		sum_pos+=v_hash[i].n;	
+			
+		num_values+=v_hash[i].n;
+
+
+		for(int j = 0; j < v_hash[i].n; j++){
+			//f<<v_hash[i].p[j]<<" ";
+			p_list.push_back(v_hash[i].p[j]);
+		}
+//		f<<endl;
+	
+	}
+	f1.write((char*)&val_list[0], (val_list.size())*sizeof(uint64_t));		
+	f2.write((char*)&p_list[0], (p_list.size())*sizeof(uint64_t));		
+	f1.close();
+	f2.close();
+	fprintf(stderr, "Index sorted SoA time %lld \n", __rdtsc() - tic);
+
+	//f.close();	
+
+	string size_file_name = (string) f_name + "_size";
+	ofstream size_f(size_file_name);
+	size_f<<v_hash.size()<<" "<<num_values;
+	size_f.close();
+
+	string prefix = (string)f_name + "_keys";	
+	string keys_bin_file_name = prefix + ".uint64";		
+	ofstream wf(keys_bin_file_name, ios::out | ios::binary);
+	wf.write((char*)&key_list[0], (key_list.size())*sizeof(uint64_t));		
+	wf.close();	
+
+	key_list.clear();
+
+	//m.clear();
+	v_hash.clear();
+
+	fprintf(stderr, "Index store File IO time %lld \n", __rdtsc() - tic);
+
+}
 
 void mm_idx_stat(const mm_idx_t *mi)
 {
@@ -117,8 +344,13 @@ void mm_idx_stat(const mm_idx_t *mi)
 				if (kh_key(h, k)&1) ++n1;
 			}
 	}
+	//klocwork fix
+	assert(n != 0);
+	assert(sum != 0);
+	// ---- 
 	fprintf(stderr, "[M::%s::%.3f*%.2f] distinct minimizers: %d (%.2f%% are singletons); average occurrences: %.3lf; average spacing: %.3lf; total length: %ld\n",
 			__func__, realtime() - mm_realtime0, cputime() / (realtime() - mm_realtime0), n, 100.0*n1/n, (double)sum / n, (double)len / sum, (long)len);
+	fprintf(stderr, "minimizer-lookup: %lu dp: %lu rmq: %lu rmq_t1: %lu rmq_t2: %lu rmq_t3: %lu rmq_t4: %lu alignment: %lu \n", minimizer_lookup_time, dp_time, rmq_time, rmq_t1, rmq_t2, rmq_t3, rmq_t4, alignment_time);
 }
 
 int mm_idx_index_name(mm_idx_t *mi)
@@ -325,6 +557,8 @@ static void *worker_pipeline(void *shared, int step, void *in)
 				kroundup64(old_max_len); kroundup64(max_len);
 				if (old_max_len != max_len) {
 					p->mi->S = (uint32_t*)realloc(p->mi->S, max_len * 4);
+					//klocwork fix
+					assert(p->mi->S != NULL);
 					memset(&p->mi->S[old_max_len], 0, 4 * (max_len - old_max_len));
 				}
 			}
@@ -517,12 +751,16 @@ mm_idx_t *mm_idx_load(FILE *fp)
 		uint8_t l;
 		mm_idx_seq_t *s = &mi->seq[i];
 		fread(&l, 1, 1, fp);
+		//klocwork fix
+		assert(l >=0 && l <= 255);
 		if (l) {
 			s->name = (char*)kmalloc(mi->km, l + 1);
 			fread(s->name, 1, l, fp);
 			s->name[l] = 0;
 		}
 		fread(&s->len, 4, 1, fp);
+		//klocwork fix
+		validate_uint(s->len)
 		s->offset = sum_len;
 		s->is_alt = 0;
 		sum_len += s->len;
@@ -533,9 +771,14 @@ mm_idx_t *mm_idx_load(FILE *fp)
 		khint_t k;
 		idxhash_t *h;
 		fread(&b->n, 4, 1, fp);
+		//klocwork fix
+		validate_ulong(b->n)	
 		b->p = (uint64_t*)malloc(b->n * 8);
 		fread(b->p, 8, b->n, fp);
 		fread(&size, 4, 1, fp);
+		//klocwork fix
+		//assert(0 <= size && size <= UINT_MAX);
+		validate_uint(size)
 		if (size == 0) continue;
 		b->h = h = kh_init(idx);
 		kh_resize(idx, h, size);
@@ -708,18 +951,28 @@ mm_idx_intv_t *mm_idx_read_bed(const mm_idx_t *mi, const char *fn, int read_junc
 		if (id < 0 || t.st < 0 || t.st >= t.en) continue;
 		r = &I[id];
 		if (i >= 11 && read_junc) { // BED12
-			int32_t st, sz, en;
+			int32_t st = 0, sz = 0, en = 0;
 			st = strtol(bs, &bs, 10); ++bs;
 			sz = strtol(bl, &bl, 10); ++bl;
+			//klocwork fix
+			validate_int(st)
+			validate_int(sz)
 			en = t.st + st + sz;
+
+			//klocwork fix
+			assert(INT_MIN <= n_blk && n_blk <= INT_MAX);
 			for (i = 1; i < n_blk; ++i) {
 				mm_idx_intv1_t s = t;
 				if (r->n == r->m) {
 					r->m = r->m? r->m + (r->m>>1) : 16;
 					r->a = (mm_idx_intv1_t*)realloc(r->a, sizeof(*r->a) * r->m);
+					assert(r->a != NULL);
 				}
 				st = strtol(bs, &bs, 10); ++bs;
 				sz = strtol(bl, &bl, 10); ++bl;
+				//klocwork fix
+				validate_int(st)
+				validate_int(sz)
 				s.st = en, s.en = t.st + st;
 				en = t.st + st + sz;
 				if (s.en > s.st) r->a[r->n++] = s;
@@ -728,6 +981,7 @@ mm_idx_intv_t *mm_idx_read_bed(const mm_idx_t *mi, const char *fn, int read_junc
 			if (r->n == r->m) {
 				r->m = r->m? r->m + (r->m>>1) : 16;
 				r->a = (mm_idx_intv1_t*)realloc(r->a, sizeof(*r->a) * r->m);
+				assert(r->a != NULL);
 			}
 			r->a[r->n++] = t;
 		}

@@ -127,7 +127,7 @@ typedef struct __kstring_t {
 				for (i = ks->begin; i < ks->end; ++i) \
 					if (isspace(ks->buf[i]) && ks->buf[i] != ' ') break; \
 			} else i = 0; /* never come to here! */ \
-			if (str->m - str->l < (size_t)(i - ks->begin + 1)) { \
+			if (str->m - str->l < (size_t)(/*klocwork fix */(size_t)i - ks->begin + 1)) { \
 				str->m = str->l + (i - ks->begin) + 1; \
 				kroundup32(str->m); \
 				str->s = (char*)realloc(str->s, str->m); \
@@ -216,6 +216,8 @@ typedef struct __kstring_t {
 			seq->seq.m = seq->seq.l + 2; \
 			kroundup32(seq->seq.m); /* rounded to the next closest 2^k */ \
 			seq->seq.s = (char*)realloc(seq->seq.s, seq->seq.m); \
+			/*klocwork fix*/ \
+			assert(seq->seq.s != NULL); \
 		} \
 		seq->seq.s[seq->seq.l] = 0;	/* null terminated string */ \
 		if (c != '+') return seq->seq.l; /* FASTA */ \

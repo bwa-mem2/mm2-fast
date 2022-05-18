@@ -1,10 +1,73 @@
+
+/* The MIT License
+
+Copyright (c) 2018-     Dana-Farber Cancer Institute
+              2017-2018 Broad Institute, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+Modified Copyright (C) 2021 Intel Corporation
+   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>; 
+	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
+	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
+*/
 #ifndef MINIMAP2_H
 #define MINIMAP2_H
 
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/types.h>
+//klocwork fix -- declare constants as 64-bit
+#define MM_F_NO_DIAG       (0x001LL) // no exact diagonal hit
+#define MM_F_NO_DUAL       (0x002LL) // skip pairs where query name is lexicographically larger than target name
+#define MM_F_CIGAR         (0x004LL)
+#define MM_F_OUT_SAM       (0x008LL)
+#define MM_F_NO_QUAL       (0x010LL)
+#define MM_F_OUT_CG        (0x020LL)
+#define MM_F_OUT_CS        (0x040LL)
+#define MM_F_SPLICE        (0x080LL) // splice mode
+#define MM_F_SPLICE_FOR    (0x100LL) // match GT-AG
+#define MM_F_SPLICE_REV    (0x200LL) // match CT-AC, the reverse complement of GT-AG
+#define MM_F_NO_LJOIN      (0x400LL)
+#define MM_F_OUT_CS_LONG   (0x800LL)
+#define MM_F_SR            (0x1000LL)
+#define MM_F_FRAG_MODE     (0x2000LL)
+#define MM_F_NO_PRINT_2ND  (0x4000LL)
+#define MM_F_2_IO_THREADS  (0x8000LL)
+#define MM_F_LONG_CIGAR    (0x10000LL)
+#define MM_F_INDEPEND_SEG  (0x20000LL)
+#define MM_F_SPLICE_FLANK  (0x40000LL)
+#define MM_F_SOFTCLIP      (0x80000LL)
+#define MM_F_FOR_ONLY      (0x100000LL)
+#define MM_F_REV_ONLY      (0x200000LL)
+#define MM_F_HEAP_SORT     (0x400000LL)
+#define MM_F_ALL_CHAINS    (0x800000LL)
+#define MM_F_OUT_MD        (0x1000000LL)
+#define MM_F_COPY_COMMENT  (0x2000000LL)
+#define MM_F_EQX           (0x4000000LL) // use =/X instead of M
+#define MM_F_PAF_NO_HIT    (0x8000000LL) // output unmapped reads to PAF
+#define MM_F_NO_END_FLT    (0x10000000LL)
+#define MM_F_HARD_MLEVEL   (0x20000000LL)
+#define MM_F_SAM_HIT_ONLY  (0x40000000LL)
 
+#if 0
 #define MM_F_NO_DIAG       0x001 // no exact diagonal hit
 #define MM_F_NO_DUAL       0x002 // skip pairs where query name is lexicographically larger than target name
 #define MM_F_CIGAR         0x004
@@ -36,6 +99,8 @@
 #define MM_F_NO_END_FLT    0x10000000
 #define MM_F_HARD_MLEVEL   0x20000000
 #define MM_F_SAM_HIT_ONLY  0x40000000
+#endif
+
 #define MM_F_RMQ           (0x80000000LL)
 #define MM_F_QSTRAND       (0x100000000LL)
 #define MM_F_NO_INV        (0x200000000LL)
@@ -286,6 +351,13 @@ mm_idx_t *mm_idx_load(FILE *fp);
 void mm_idx_dump(FILE *fp, const mm_idx_t *mi);
 
 /**
+ * Store hash table from minimap2 index into a file
+ * @param f_name     File name for output file
+ * @param mi 	     minimap2 index 	
+ */
+void mm_idx_dump_hash(const char* f_name, const mm_idx_t *mi);
+
+/**
  * Create an index from strings in memory
  *
  * @param w            minimizer window size
@@ -313,6 +385,19 @@ void mm_idx_stat(const mm_idx_t *idx);
  * @param r          minimap2 index
  */
 void mm_idx_destroy(mm_idx_t *mi);
+/**
+ * Destroy/deallocate an hash table index
+ *
+ * @param r          minimap2 index
+ */
+void mm_idx_destroy_mm_hash(mm_idx_t *mi);
+
+/**
+ * Destroy/deallocate target sequences
+ *
+ * @param r          minimap2 index
+ */
+void mm_idx_destroy_seq(mm_idx_t *mi);
 
 /**
  * Initialize a thread-local buffer for mapping

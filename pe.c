@@ -119,7 +119,9 @@ void mm_pair(void *km, int max_gap_ref, int pe_bonus, int sub_diff, int match_sc
 				q = a[j].r;
 				if (r->rid != q->rid || r->rs - q->re > max_gap_ref) break;
 				if (r->p->dp_max + q->p->dp_max < dp_thres) continue;
-				score = (int64_t)(r->p->dp_max + q->p->dp_max) << 32 | (r->hash + q->hash);
+				//klocwork fix
+				//score = (int64_t)(()r->p->dp_max + q->p->dp_max) << 32 | (r->hash + q->hash);
+				score = (int64_t)((int64_t)r->p->dp_max + q->p->dp_max) << 32 | (r->hash + q->hash);
 				if (score > max)
 					max = score, max_idx[a[j].s] = j, max_idx[a[i].s] = i;
 				kv_push(uint64_t, km, sc, score);

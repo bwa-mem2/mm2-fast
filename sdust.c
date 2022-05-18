@@ -1,7 +1,10 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <cassert>
 #include "kalloc.h"
+//klocwork fix
+#include <emmintrin.h>
 #include "kdq.h"
 #include "kvec.h"
 #include "sdust.h"
@@ -71,7 +74,13 @@ static inline void shift_window(int t, kdq_t(int) *w, int T, int W, int *L, int 
 {
 	int s;
 	if ((int)kdq_size(w) >= W - SD_WLEN + 1) { // TODO: is this right for SD_WLEN!=3?
-		s = *kdq_shift(int, w);
+		//klocwork fix
+		//s = *kdq_shift(int, w);
+		int *s_ptr = kdq_shift(int, w);
+		assert(s_ptr != NULL);
+		s = *s_ptr;
+		// ------
+		
 		*rw -= --cw[s];
 		if (*L > (int)kdq_size(w))
 			--*L, *rv -= --cv[s];
@@ -82,6 +91,8 @@ static inline void shift_window(int t, kdq_t(int) *w, int T, int W, int *L, int 
 	*rv += cv[t]++;
 	if (cv[t] * 10 > T<<1) {
 		do {
+			// klocwork fix -- fence
+			//_mm_lfence();
 			s = kdq_at(w, kdq_size(w) - *L);
 			*rv -= --cv[s];
 			--*L;
@@ -110,6 +121,8 @@ static void find_perfect(void *km, perf_intv_v *P, const kdq_t(int) *w, int T, i
 	int c[SD_WTOT], r = rv, i, max_r = 0, max_l = 0;
 	memcpy(c, cv, SD_WTOT * sizeof(int));
 	for (i = (long)kdq_size(w) - L - 1; i >= 0; --i) {
+		//klocwork fix -- fence
+		//_mm_lfence();
 		int j, t = kdq_at(w, i), new_r, new_l;
 		r += c[t]++;
 		new_r = r, new_l = kdq_size(w) - i - 1;

@@ -1,11 +1,77 @@
+
+/* The MIT License
+
+Copyright (c) 2018-     Dana-Farber Cancer Institute
+              2017-2018 Broad Institute, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+Modified Copyright (C) 2021 Intel Corporation
+   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>; 
+	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
+	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
+*/
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <climits>
 #include "bseq.h"
 #include "minimap.h"
 #include "mmpriv.h"
 #include "ketopt.h"
+#include <x86intrin.h>
+#include <immintrin.h>
+#include <sys/time.h>
+#include <string>
+#include <map>
+#include <stdint.h>
+#include <unistd.h>
+
+using namespace std;
+uint64_t avg;
+uint64_t minimizer_lookup_time, alignment_time, dp_time, rmq_time, rmq_t1, rmq_t2, rmq_t3, rmq_t4;
+
+bool enable_vect_dp_chaining = false;
+
+#ifdef LISA_HASH
+#include "lisa_hash.h"
+lisa_hash<uint64_t, uint64_t> *lh;
+#endif
+
+// New memory allocation approach for alignment optimizations
+//
+void *km1;
+uint64_t km_size = 500000000; // 500 MB
+int km_top;
+
+// Memory for alignment end
+
+
+#ifndef __rdtsc
+#ifdef _rdtsc
+#define __rdtsc _rdtsc
+#else
+#define __rdtsc __builtin_ia32_rdtsc
+#endif
+#endif
 
 #define MM_VERSION "2.22-r1101"
 
@@ -115,8 +181,13 @@ static inline void yes_or_no(mm_mapopt_t *opt, int64_t flag, int long_idx, const
 	}
 }
 
+
 int main(int argc, char *argv[])
 {
+#ifdef PARALLEL_CHAINING
+	enable_vect_dp_chaining = true;
+#endif
+
 	const char *opt_str = "2aSDw:k:K:t:r:f:Vv:g:G:I:d:XT:s:x:Hcp:M:n:z:A:B:O:E:m:N:Qu:R:hF:LC:yYPo:e:U:";
 	ketopt_t o = KETOPT_INIT;
 	mm_mapopt_t opt;
@@ -131,9 +202,11 @@ int main(int argc, char *argv[])
 	liftrlimit();
 	mm_realtime0 = realtime();
 	mm_set_opt(0, &ipt, &opt);
+	string preset_arg = "";
 
 	while ((c = ketopt(&o, argc, argv, 1, opt_str, long_options)) >= 0) { // test command line options and apply option -x/preset first
 		if (c == 'x') {
+			preset_arg +=  (string) o.arg;
 			if (mm_set_opt(o.arg, &ipt, &opt) < 0) {
 				fprintf(stderr, "[ERROR] unknown preset '%s'\n", o.arg);
 				return 1;
@@ -161,7 +234,7 @@ int main(int argc, char *argv[])
 		else if (c == 'N') old_best_n = opt.best_n, opt.best_n = atoi(o.arg);
 		else if (c == 'p') opt.pri_ratio = atof(o.arg);
 		else if (c == 'M') opt.mask_level = atof(o.arg);
-		else if (c == 'c') opt.flag |= MM_F_OUT_CG | MM_F_CIGAR;
+		else if (c == 'c') /* klocwork fix */ opt.flag |= (int64_t)MM_F_OUT_CG | (int64_t)MM_F_CIGAR;
 		else if (c == 'D') opt.flag |= MM_F_NO_DIAG;
 		else if (c == 'P') opt.flag |= MM_F_ALL_CHAINS;
 		else if (c == 'X') opt.flag |= MM_F_ALL_CHAINS | MM_F_NO_DIAG | MM_F_NO_DUAL | MM_F_NO_LJOIN; // -D -P --no-long-join --dual=no
@@ -186,6 +259,7 @@ int main(int argc, char *argv[])
 		else if (c == 'o') {
 			if (strcmp(o.arg, "-") != 0) {
 				if (freopen(o.arg, "wb", stdout) == NULL) {
+				//if (err_xreopen_core(o.arg, "wb", stdout) == NULL) {
 					fprintf(stderr, "[ERROR]\033[1;31m failed to write the output to file '%s'\033[0m: %s\n", o.arg, strerror(errno));
 					exit(1);
 				}
@@ -366,6 +440,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "[ERROR] incorrect input: in the sr mode, please specify no more than two query files.\n");
 		return 1;
 	}
+	preset_arg = (string)argv[o.ind] + "_" + preset_arg + "_minimizers_key_value_sorted";
 	idx_rdr = mm_idx_reader_open(argv[o.ind], &ipt, fnw);
 	if (idx_rdr == 0) {
 		fprintf(stderr, "[ERROR] failed to open file '%s': %s\n", argv[o.ind], strerror(errno));
@@ -378,6 +453,8 @@ int main(int argc, char *argv[])
 	}
 	if (opt.best_n == 0 && (opt.flag&MM_F_CIGAR) && mm_verbose >= 2)
 		fprintf(stderr, "[WARNING]\033[1;31m `-N 0' reduces alignment accuracy. Please use --secondary=no to suppress secondary alignments.\033[0m\n");
+	// klocwork fix
+	assert(n_threads > 0 && n_threads < INT_MAX);
 	while ((mi = mm_idx_reader_read(idx_rdr, n_threads)) != 0) {
 		int ret;
 		if ((opt.flag & MM_F_CIGAR) && (mi->flag & MM_I_NO_SEQ)) {
@@ -408,6 +485,9 @@ int main(int argc, char *argv[])
 					__func__, realtime() - mm_realtime0, cputime() / (realtime() - mm_realtime0), mi->n_seq);
 		if (argc != o.ind + 1) mm_mapopt_update(&opt, mi);
 		if (mm_verbose >= 3) mm_idx_stat(mi);
+#ifdef LISA_INDEX
+		mm_idx_dump_hash(preset_arg.c_str(), mi); 
+#endif	
 		if (junc_bed) mm_idx_bed_read(mi, junc_bed, 1);
 		if (alt_list) mm_idx_alt_read(mi, alt_list);
 		if (argc - (o.ind + 1) == 0) {
@@ -415,6 +495,16 @@ int main(int argc, char *argv[])
 			continue; // no query files
 		}
 		ret = 0;
+#ifdef LISA_HASH
+	fprintf(stderr, "Using LISA_HASH..\n");
+	mm_idx_destroy_mm_hash(mi);
+	char* prefix;
+	lh = new lisa_hash<uint64_t, uint64_t>(preset_arg, prefix);
+	fprintf(stderr, "Loading done.\n");
+//	total_time =  __rdtsc();
+//	fprintf(stderr, "\nIndexing Real time: %.3f sec;\n", realtime() - mapping_time);
+#endif
+	mm_realtime0 = realtime();
 		if (!(opt.flag & MM_F_FRAG_MODE)) {
 			for (i = o.ind + 1; i < argc; ++i) {
 				ret = mm_map_file(mi, argv[i], &opt, n_threads);
@@ -423,7 +513,13 @@ int main(int argc, char *argv[])
 		} else {
 			ret = mm_map_file_frag(mi, argc - (o.ind + 1), (const char**)&argv[o.ind + 1], &opt, n_threads);
 		}
+		//mm_idx_destroy(mi);
+//klocwork fix -- 
+#ifdef LISA_HASH
+		mm_idx_destroy_seq(mi);
+#else
 		mm_idx_destroy(mi);
+#endif
 		if (ret < 0) {
 			fprintf(stderr, "ERROR: failed to map the query file\n");
 			exit(EXIT_FAILURE);
@@ -447,5 +543,10 @@ int main(int argc, char *argv[])
 			fprintf(stderr, " %s", argv[i]);
 		fprintf(stderr, "\n[M::%s] Real time: %.3f sec; CPU: %.3f sec; Peak RSS: %.3f GB\n", __func__, realtime() - mm_realtime0, cputime(), peakrss() / 1024.0 / 1024.0 / 1024.0);
 	}
+
+	fprintf(stderr, "minimizer-lookup: %lu dp: %lu rmq: %lu rmq_t1: %lu rmq_t2: %lu rmq_t3: %lu rmq_t4: %lu alignment: %lu %lu\n", minimizer_lookup_time, dp_time, rmq_time, rmq_t1, rmq_t2, rmq_t3, rmq_t4, alignment_time, avg);
+#ifdef LISA_HASH
+	delete lh;
+#endif	
 	return 0;
 }

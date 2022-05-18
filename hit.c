@@ -194,6 +194,8 @@ void mm_hit_sort(void *km, int *n_regs, mm_reg1_t *r, float alt_diff_frac)
 	if (n <= 1) return;
 	aux = (mm128_t*)kmalloc(km, n * 16);
 	t = (mm_reg1_t*)kmalloc(km, n * sizeof(mm_reg1_t));
+	//klocwork fix
+	memset(t, 0, n * sizeof(mm_reg1_t));
 	for (i = n_aux = 0; i < n; ++i) {
 		if (r[i].inv || r[i].cnt > 0) { // squeeze out elements with cnt==0 (soft deleted)
 			int score;
@@ -316,6 +318,8 @@ mm_seg_t *mm_seg_gen(void *km, uint32_t hash, int n_segs, const int *qlens, int 
 {
 	int s, i, j, acc_qlen[MM_MAX_SEG+1], qlen_sum = 0;
 	mm_seg_t *seg;
+	//klocwork fix
+	memset(&acc_qlen[0], 0, (MM_MAX_SEG+1)*sizeof(int));
 
 	assert(n_segs <= MM_MAX_SEG);
 	for (s = 1, acc_qlen[0] = 0; s < n_segs; ++s)
