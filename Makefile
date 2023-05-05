@@ -1,15 +1,69 @@
 CFLAGS=		-g -Wall -O2 -Wc++-compat #-Wextra
 CPPFLAGS=	-DHAVE_KALLOC #-march=native #-DALIGN_AVX -DPARALLEL_CHAINING #-DMANUAL_PROFILING
 COMP_FLAG = -march=native
+CHAIN_FLAG = -DPARALLEL_CHAINING
+ifneq ($(portable),)
+	STATIC_GCC=-static-libgcc -static-libstdc++
+endif 
+ifeq ($(CXX), icpc)
+	CC= icc
+else ifeq ($(CXX), g++)
+	CC=gcc
+endif	
 
 ifeq ($(avx2_compile), 1)
 	COMP_FLAG = -mavx2
 endif
+ifeq ($(arch),sse41)
+	CHAIN_FLAG = -DPARALLEL_CHAINING_
+	ifeq ($(CXX), icpc)
+		COMP_FLAG=-msse4.1
+		
+	else
+		COMP_FLAG=-msse -msse2 -msse3 -mssse3 -msse4.1
+	endif
+else ifeq ($(arch),sse42)
+	CHAIN_FLAG = -DPARALLEL_CHAINING_
+	ifeq ($(CXX), icpc)	
+		COMP_FLAG=-msse4.2
+	else
+		COMP_FLAG=-msse -msse2 -msse3 -mssse3 -msse4.1 -msse4.2
+	endif
+else ifeq ($(arch),avx)
+	CHAIN_FLAG = -DPARALLEL_CHAINING_
+	ifeq ($(CXX), icpc)
+		COMP_FLAG=-mavx ##-xAVX
+	else	
+		COMP_FLAG=-mavx
+	endif
+else ifeq ($(arch),avx2)
+	ifeq ($(CXX), icpc)
+		COMP_FLAG=-march=core-avx2 #-xCORE-AVX2
+	else	
+		COMP_FLAG=-mavx2
+	endif
+else ifeq ($(arch),avx512)
+	ifeq ($(CXX), icpc)
+		COMP_FLAG=-xCORE-AVX512
+	else	
+		COMP_FLAG=-mavx512bw
+	endif
+else ifeq ($(arch),native)
+	COMP_FLAG=-march=native
+else ifneq ($(arch),)
+# To provide a different architecture flag like -march=core-avx2.
+	COMP_FLAG=$(arch)
+else
+myall:multi
+endif
+
 
 #CPPFLAGS=	-DHAVE_KALLOC -mavx2 -DALIGN_AVX -DAPPLY_AVX2 -DPARALLEL_CHAINING #-DLISA_HASH -DUINT64 -DVECTORIZE #-DMANUAL_PROFILING
 #CPPFLAGS=	-DHAVE_KALLOC -mavx2 -DPARALLEL_CHAINING  #-DMANUAL_PROFILING
 
-OPT_FLAGS= -DPARALLEL_CHAINING -DALIGN_AVX -DAPPLY_AVX2 
+# OPT_FLAGS= -DPARALLEL_CHAINING -DALIGN_AVX -DAPPLY_AVX2
+OPT_FLAGS=-DALIGN_AVX -DAPPLY_AVX2
+OPT_FLAGS+= ${CHAIN_FLAG} 
 OPT_FLAGS+=$(COMP_FLAG)
 ifeq ($(lhash_index), 1)	
 	CPPFLAGS+=	-DLISA_INDEX 
@@ -37,13 +91,14 @@ endif
 
 #INCLUDES=
 #INCLUDES=	-I./ext/TAL_offline/src/LISA-hash #-I./ext/TAL/src/dynamic-programming 
-INCLUDES=	-I./ext/TAL/src/LISA-hash -I./ext/TAL/src/dynamic-programming 
+INCLUDES=	-I./ext/TAL/src/LISA-hash -I./ext/TAL/src/dynamic-programming -Iext/TAL/ext/safestringlib/include
 OBJS=		kthread.o kalloc.o misc.o bseq.o sketch.o sdust.o options.o index.o \
 			lchain.o align.o hit.o seed.o map.o format.o pe.o esterr.o splitidx.o \
 			ksw2_ll_sse.o
 PROG=		minimap2
 PROG_EXTRA=	sdust minimap2-lite
-LIBS=		-lm -lz -lpthread
+LIBS=		-lm -lz -lpthread -Lext/TAL/ext/safestringlib -lsafestring $(STATIC_GCC)
+SAFE_STR_LIB=    ext/TAL/ext/safestringlib/libsafestring.a
 
 CC=$(CXX)
 ifeq ($(CC), g++)
@@ -86,7 +141,7 @@ all:$(PROG)
 
 extra:all $(PROG_EXTRA)
 
-minimap2:main.o libminimap2.a
+minimap2:libminimap2.a $(SAFE_STR_LIB) main.o
 		$(CC) $(CFLAGS) main.o -o $@ -L. -lminimap2 $(LIBS)
 
 minimap2-lite:example.o libminimap2.a
@@ -99,15 +154,17 @@ sdust:sdust.c kalloc.o kalloc.h kdq.h kvec.h kseq.h ketopt.h sdust.h
 		$(CC) -D_SDUST_MAIN $(CFLAGS) $< kalloc.o -o $@ -lz
 
 multi:
-		$(MAKE) clean
-		$(MAKE)
-		mv minimap2 mm2-fast
-		$(MAKE) clean
-		$(MAKE) lhash=1
-		mv minimap2 mm2-fast-lhash
-		$(MAKE) clean
-		$(MAKE) no_opt=1
-		mv minimap2 mm2-fast-no-opt
+		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
+		$(MAKE) arch=sse41    EXE=minimap2.sse41    CXX=$(CXX) all
+		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
+		$(MAKE) arch=sse42    EXE=minimap2.sse42    CXX=$(CXX) all
+		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
+		$(MAKE) arch=avx    EXE=minimap2.avx    CXX=$(CXX) all
+		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
+		$(MAKE) arch=avx2   EXE=minimap2.avx2     CXX=$(CXX) all
+		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
+		$(MAKE) arch=avx512 EXE=minimap2.avx512bw CXX=$(CXX) all
+		$(CXX) -Wall -O3 runsimd.cpp -Iext/TAL/ext/safestringlib/include -Lext/TAL/ext/safestringlib/ -lsafestring $(STATIC_GCC) -o mm2
 
 # SSE-specific targets on x86/x86_64
 
@@ -149,6 +206,8 @@ ksw2_exts2_neon.o:ksw2_exts2_sse.c ksw2.h kalloc.h
 		$(CC) -c $(CFLAGS) $(CPPFLAGS) -DKSW_SSE2_ONLY -D__SSE2__ $(INCLUDES) $< -o $@
 
 # other non-file targets
+$(SAFE_STR_LIB):
+	cd ext/TAL/ext/safestringlib/ && $(MAKE) clean && $(MAKE) CC=gcc directories libsafestring.a
 
 clean:
 		rm -fr gmon.out *.o a.out $(PROG) $(PROG_EXTRA) *~ *.a *.dSYM build dist mappy*.so mappy.c python/mappy.c mappy.egg*
