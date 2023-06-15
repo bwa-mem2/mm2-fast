@@ -45,6 +45,7 @@ Modified Copyright (C) 2021 Intel Corporation
 #include <stdint.h>
 #include <unistd.h>
 #include <climits>
+#include "ksw2_extd2_avx.h"
 using namespace std;
 uint64_t avg;
 uint64_t minimizer_lookup_time, alignment_time, dp_time, rmq_time, rmq_t1, rmq_t2, rmq_t3, rmq_t4;
@@ -73,10 +74,10 @@ int km_top;
 #endif
 #endif
 #define MM_VERSION "2.24-r1122"
-
 #ifdef __linux__
 #include <sys/resource.h>
 #include <sys/time.h>
+
 void liftrlimit()
 {
 	struct rlimit r;
@@ -184,12 +185,34 @@ static inline void yes_or_no(mm_mapopt_t *opt, int64_t flag, int long_idx, const
 	}
 }
 
+
 int main(int argc, char *argv[])
 {
 #ifdef PARALLEL_CHAINING
 	enable_vect_dp_chaining = true;
 #endif
 
+
+#if (__AVX512BW__) 
+	fprintf(stderr, "Executing in AVX512 mode!!\n");
+	printf("AVX512 is executing !! \n");
+
+#elif (__AVX2__) 
+	fprintf(stderr, "Executing in AVX2 mode!!\n");
+	printf("AVX2 is executing !! \n");
+
+#elif (__AVX__)
+	fprintf(stderr, "Executing in AVX mode!!\n");    
+
+#elif (__SSE4_2__) 
+	fprintf(stderr, "Executing in SSE4.2 mode!!\n");
+
+#elif (__SSE4_1__) 
+	fprintf(stderr, "Executing in SSE4.1 mode!!\n"); 
+	
+#endif
+		fprintf(stderr, "-----------------------------\n");
+		
 	const char *opt_str = "2aSDw:k:K:t:r:f:Vv:g:G:I:d:XT:s:x:Hcp:M:n:z:A:B:O:E:m:N:Qu:R:hF:LC:yYPo:e:U:";
 	ketopt_t o = KETOPT_INIT;
 	mm_mapopt_t opt;

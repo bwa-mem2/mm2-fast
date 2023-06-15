@@ -141,7 +141,7 @@ all:$(PROG)
 
 extra:all $(PROG_EXTRA)
 
-minimap2:libminimap2.a $(SAFE_STR_LIB) main.o
+$(PROG):libminimap2.a $(SAFE_STR_LIB) main.o
 		$(CC) $(CFLAGS) main.o -o $@ -L. -lminimap2 $(LIBS)
 
 minimap2-lite:example.o libminimap2.a
@@ -155,16 +155,16 @@ sdust:sdust.c kalloc.o kalloc.h kdq.h kvec.h kseq.h ketopt.h sdust.h
 
 multi:
 		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
-		$(MAKE) arch=sse41    EXE=minimap2.sse41    CXX=$(CXX) all
+		$(MAKE) arch=sse41    PROG=minimap2.sse41    CXX=$(CXX) all
 		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
-		$(MAKE) arch=sse42    EXE=minimap2.sse42    CXX=$(CXX) all
+		$(MAKE) arch=sse42    PROG=minimap2.sse42    CXX=$(CXX) all
 		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
-		$(MAKE) arch=avx    EXE=minimap2.avx    CXX=$(CXX) all
+		$(MAKE) arch=avx    PROG=minimap2.avx    CXX=$(CXX) all
 		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
-		$(MAKE) arch=avx2   EXE=minimap2.avx2     CXX=$(CXX) all
+		$(MAKE) arch=avx2   PROG=minimap2.avx2     CXX=$(CXX) all
 		rm -f *.o libminimap2.a; cd ext/TAL/ext/safestringlib/ && $(MAKE) clean;
-		$(MAKE) arch=avx512 EXE=minimap2.avx512bw CXX=$(CXX) all
-		$(CXX) -Wall -O3 runsimd.cpp -Iext/TAL/ext/safestringlib/include -Lext/TAL/ext/safestringlib/ -lsafestring $(STATIC_GCC) -o mm2
+		$(MAKE) arch=avx512 PROG=minimap2.avx512bw CXX=$(CXX) all
+		$(CXX) -Wall -O3 runsimd.cpp -Iext/TAL/ext/safestringlib/include -Lext/TAL/ext/safestringlib/ -lsafestring $(STATIC_GCC) -o minimap2
 
 # SSE-specific targets on x86/x86_64
 
