@@ -45,6 +45,7 @@ Modified Copyright (C) 2021 Intel Corporation
 #include <stdint.h>
 #include <unistd.h>
 #include <climits>
+#include "ksw2_extd2_avx.h"
 using namespace std;
 uint64_t avg;
 uint64_t minimizer_lookup_time, alignment_time, dp_time, rmq_time, rmq_t1, rmq_t2, rmq_t3, rmq_t4;
