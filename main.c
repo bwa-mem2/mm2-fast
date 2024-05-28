@@ -194,11 +194,11 @@ int main(int argc, char *argv[])
 
 #if (__AVX512BW__) 
 	fprintf(stderr, "Executing in AVX512 mode!!\n");
-	printf("AVX512 is executing !! \n");
+	//printf("AVX512 is executing !! \n");
 
 #elif (__AVX2__) 
 	fprintf(stderr, "Executing in AVX2 mode!!\n");
-	printf("AVX2 is executing !! \n");
+	//printf("AVX2 is executing !! \n");
 
 #elif (__AVX__)
 	fprintf(stderr, "Executing in AVX mode!!\n");    
