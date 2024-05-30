@@ -25,19 +25,25 @@
 #CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 #SOFTWARE.
 #Modified Copyright (C) 2021 Intel Corporation
-#   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>;
-#   Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>;
-#   Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
+#   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>; 
+#	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
+#	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
 #
+
+SCRIPT_PATH="${BASH_SOURCE:-$0}"
+ABS_SCRIPT_PATH="$(realpath "${SCRIPT_PATH}")"
+ABS_DIRECTORY="$(dirname "${ABS_SCRIPT_PATH}")"
+
 ref_data=$1
 preset=$2
 
+cd $ABS_DIRECTORY
 touch temp_read.fastq
-/lisa/index/mm2-fast/./minimap2 -ax $2 $1 temp_read.fastq >/dev/null
+./minimap2  -ax $2 $1 temp_read.fastq >/dev/null
 rm temp_read.fastq
 kv_file=$1"_"$2"_minimizers_key_value_sorted"
 
 full_path=`readlink -f $kv_file`
 
-cd /mm2-fast/ext/TAL/
-CXX=g++ ./build-lisa-hash-index $full_path
+cd $ABS_DIRECTORY/ext/TAL/
+./build-lisa-hash-index $full_path

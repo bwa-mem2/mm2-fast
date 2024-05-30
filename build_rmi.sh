@@ -29,19 +29,15 @@
 #	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
 #	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
 #
-ref_data=$1
-preset=$2
-
 make clean && make lhash_index=1
-touch temp_read.fastq
-./minimap2  -ax $2 $1 temp_read.fastq >/dev/null      
+#installation steps for rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+. "$HOME/.cargo/env"
+export PATH=$HOME/.cargo/bin:$PATH
 
-kv_file=$1"_"$2"_minimizers_key_value_sorted"  
+#install cargo dependancies
+cd ./ext/TAL/ext/build-rmi/learned-systems-rmi
+cargo build --release
 
-full_path=`readlink -f $kv_file`
-
-cd ./ext/TAL
+cd ../../../
 make lisa_hash
-./build-lisa-hash-index $full_path
-
-rm ../../temp_read.fastq

@@ -49,13 +49,6 @@ RUN mv minimap2* /lisa/mm2-fast/
 RUN make clean
 
 WORKDIR /mm2-fast
-RUN CXX=g++ && make clean && make lhash_index=1
-RUN mkdir -p /lisa/index/mm2-fast
-RUN mv minimap2* /lisa/index/mm2-fast/
+RUN CXX=g++ && bash ./build_rmi.sh
 
-RUN CXX=g++ && make clean && make lhash_index=1
-
-WORKDIR /mm2-fast/ext/TAL
-RUN CXX=g++ && make lisa_hash
-
-COPY ./create_lisa_index.sh /lisa/
+WORKDIR /
