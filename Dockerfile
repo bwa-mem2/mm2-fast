@@ -6,9 +6,9 @@ RUN apt-get install -y build-essential git zlib1g-dev curl time
 #time is required
 
 
-#RUN git clone --recursive https://github.com/bwa-mem2/mm2-fast.git
-WORKDIR /mm2-fast
-COPY . /mm2-fast/
+RUN git clone --recursive https://github.com/bwa-mem2/mm2-fast.git
+#WORKDIR /mm2-fast
+#COPY . /mm2-fast/
 
 ###minimap2 baseline
 WORKDIR /mm2-fast

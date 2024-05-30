@@ -41,3 +41,4 @@ cargo build --release
 
 cd ../../../
 make lisa_hash
+cd ../..

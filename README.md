@@ -47,7 +47,8 @@ The file ```diff_result``` should be empty, meaning a difference of 0 lines.
 The default compilation using make applies two optimizations: vectorized chaining and sequence alignment. The learned-indexes based seeding is disabled by default as it requires availability of [Rust](https://en.wikipedia.org/wiki/Rust_(programming_language)). This is because the learned hash-table uses an external training library that runs on Rust. Rust is trivial to install, see https://rustup.rs/ and add its path to .bashrc file. Rust installation only takes a few seconds. Following are the steps to enable learned hash table optimization in mm2-fast:
 ```sh
 # Start by building learned hash table index for optimized seeding module 
-./build_rmi.sh                 ##build binaries for creating index.
+cd mm2-fast
+source build_rmi.sh                 ##build binaries for creating index.
 ./run_rmi.sh test/MT-human.fa map-ont               ##Takes two arguments: 1. path-to-reference-seq-file 2. preset. 
 						      ##For human genome, this step should take around 2-3 minutes to finish.    
 
