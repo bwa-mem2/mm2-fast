@@ -81,9 +81,15 @@ docker run -v $PWD/test:/test mm2-fast:latest /mm2fast/minimap2  -ax map-ont /te
 
 #mm2-fast Advanced Options
 #create index
+#docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/run_rmi.sh  /test/MT-human.fa <>
+#<> can be map-hifi,map-ont,map-pb,asm5,asm20 depending upon your usecase
+#example
 docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/run_rmi.sh  /test/MT-human.fa map-ont
 
 #mapping
+#docker run -v $PWD/test:/test mm2-fast:latest /lisa/mm2-fast/minimap2  -ax <> /test/MT-human.fa /test/MT-orang.fa > mm2fast_lisa
+#<> can be map-hifi,map-ont,map-pb,asm5,asm20 depending upon your usecase
+#example
 docker run -v $PWD/test:/test mm2-fast:latest /lisa/mm2-fast/minimap2  -ax map-ont /test/MT-human.fa /test/MT-orang.fa > mm2fast_lisa
 ```
 
