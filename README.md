@@ -49,7 +49,7 @@ The default compilation using make applies two optimizations: vectorized chainin
 # Start by building learned hash table index for optimized seeding module 
 cd mm2-fast
 source build_rmi.sh                 ##build binaries for creating index.
-./run_rmi.sh test/MT-human.fa map-ont               ##Takes two arguments: 1. path-to-reference-seq-file 2. preset. 
+./create_index_rmi.sh test/MT-human.fa map-ont               ##Takes two arguments: 1. path-to-reference-seq-file 2. preset. 
 						      ##For human genome, this step should take around 2-3 minutes to finish.    
 
 # Next, compile and run the mapping phase  
@@ -81,10 +81,10 @@ docker run -v $PWD/test:/test mm2-fast:latest /mm2fast/minimap2  -ax map-ont /te
 
 #mm2-fast Advanced Options
 #create index
-#docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/run_rmi.sh  /test/MT-human.fa <>
+#docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/create_index_rmi.sh  /test/MT-human.fa <>
 #<> can be map-hifi,map-ont,map-pb,asm5,asm20 depending upon your usecase
 #example
-docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/run_rmi.sh  /test/MT-human.fa map-ont
+docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/create_index_rmi.sh  /test/MT-human.fa map-ont
 
 #mapping
 #docker run -v $PWD/test:/test mm2-fast:latest /lisa/mm2-fast/minimap2  -ax <> /test/MT-human.fa /test/MT-orang.fa > mm2fast_lisa
