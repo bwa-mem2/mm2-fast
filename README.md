@@ -47,7 +47,9 @@ The file ```diff_result``` should be empty, meaning a difference of 0 lines.
 The default compilation using make applies two optimizations: vectorized chaining and sequence alignment. The learned-indexes based seeding is disabled by default as it requires availability of [Rust](https://en.wikipedia.org/wiki/Rust_(programming_language)). This is because the learned hash-table uses an external training library that runs on Rust. Rust is trivial to install, see https://rustup.rs/ and add its path to .bashrc file. Rust installation only takes a few seconds. Following are the steps to enable learned hash table optimization in mm2-fast:
 ```sh
 # Start by building learned hash table index for optimized seeding module 
-./build_rmi.sh test/MT-human.fa map-ont               ##Takes two arguments: 1. path-to-reference-seq-file 2. preset. 
+cd mm2-fast
+source build_rmi.sh                 ##build binaries for creating index.
+./create_index_rmi.sh test/MT-human.fa map-ont               ##Takes two arguments: 1. path-to-reference-seq-file 2. preset. 
 						      ##For human genome, this step should take around 2-3 minutes to finish.    
 
 # Next, compile and run the mapping phase  
@@ -57,6 +59,38 @@ make clean && make lhash=1
 To compile mm2-fast with all optimizations turned off and switch back to default minimap2, use the following command during compilation. This could be useful for debugging.
 ```sh
 make clean && make no_opt=1
+```
+
+### Running on docker image
+
+```sh 
+#to use test data, download github repository
+git clone --recursive https://github.com/bwa-mem2/mm2-fast.git
+cd mm2-fast
+
+#build Docker image
+docker build -f Dockerfile -t mm2-fast:latest .
+
+#minimap2 baseline
+docker run -v $PWD/test:/test mm2-fast:latest /baseline/minimap2  -ax map-ont /test/MT-human.fa /test/MT-orang.fa > minimap2_baseline
+
+
+#mm2-fast
+docker run -v $PWD/test:/test mm2-fast:latest /mm2fast/minimap2  -ax map-ont /test/MT-human.fa /test/MT-orang.fa > mm2fast
+
+
+#mm2-fast Advanced Options
+#create index
+#docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/create_index_rmi.sh  /test/MT-human.fa <>
+#<> can be map-hifi,map-ont,map-pb,asm5,asm20 depending upon your usecase
+#example
+docker run -v $PWD/test:/test mm2-fast:latest bash /mm2-fast/create_index_rmi.sh  /test/MT-human.fa map-ont
+
+#mapping
+#docker run -v $PWD/test:/test mm2-fast:latest /lisa/mm2-fast/minimap2  -ax <> /test/MT-human.fa /test/MT-orang.fa > mm2fast_lisa
+#<> can be map-hifi,map-ont,map-pb,asm5,asm20 depending upon your usecase
+#example
+docker run -v $PWD/test:/test mm2-fast:latest /lisa/mm2-fast/minimap2  -ax map-ont /test/MT-human.fa /test/MT-orang.fa > mm2fast_lisa
 ```
 
 ### Performance

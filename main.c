@@ -24,8 +24,8 @@ ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 Modified Copyright (C) 2021 Intel Corporation
-   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>; 
-	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>; 
+   Contacts: Saurabh Kalikar <saurabh.kalikar@intel.com>;
+	Vasimuddin Md <vasimuddin.md@intel.com>; Sanchit Misra <sanchit.misra@intel.com>;
 	Chirag Jain <chirag@iisc.ac.in>; Heng Li <hli@jimmy.harvard.edu>
 */
 
@@ -192,26 +192,24 @@ int main(int argc, char *argv[])
 #endif
 
 
-#if (__AVX512BW__) 
+#if (__AVX512BW__)
 	fprintf(stderr, "Executing in AVX512 mode!!\n");
-	printf("AVX512 is executing !! \n");
 
-#elif (__AVX2__) 
+#elif (__AVX2__)
 	fprintf(stderr, "Executing in AVX2 mode!!\n");
-	printf("AVX2 is executing !! \n");
 
 #elif (__AVX__)
-	fprintf(stderr, "Executing in AVX mode!!\n");    
+	fprintf(stderr, "Executing in AVX mode!!\n");
 
-#elif (__SSE4_2__) 
+#elif (__SSE4_2__)
 	fprintf(stderr, "Executing in SSE4.2 mode!!\n");
 
-#elif (__SSE4_1__) 
-	fprintf(stderr, "Executing in SSE4.1 mode!!\n"); 
-	
+#elif (__SSE4_1__)
+	fprintf(stderr, "Executing in SSE4.1 mode!!\n");
+
 #endif
 		fprintf(stderr, "-----------------------------\n");
-		
+
 	const char *opt_str = "2aSDw:k:K:t:r:f:Vv:g:G:I:d:XT:s:x:Hcp:M:n:z:A:B:O:E:m:N:Qu:R:hF:LC:yYPo:e:U:";
 	ketopt_t o = KETOPT_INIT;
 	mm_mapopt_t opt;
@@ -513,8 +511,8 @@ int main(int argc, char *argv[])
 		if (argc != o.ind + 1) mm_mapopt_update(&opt, mi);
 		if (mm_verbose >= 3) mm_idx_stat(mi);
 #ifdef LISA_INDEX
-		mm_idx_dump_hash(preset_arg.c_str(), mi); 
-#endif	
+		mm_idx_dump_hash(preset_arg.c_str(), mi);
+#endif
 		if (junc_bed) mm_idx_bed_read(mi, junc_bed, 1);
 		if (alt_list) mm_idx_alt_read(mi, alt_list);
 		if (argc - (o.ind + 1) == 0) {
@@ -570,10 +568,10 @@ int main(int argc, char *argv[])
 			fprintf(stderr, " %s", argv[i]);
 		fprintf(stderr, "\n[M::%s] Real time: %.3f sec; CPU: %.3f sec; Peak RSS: %.3f GB\n", __func__, realtime() - mm_realtime0, cputime(), peakrss() / 1024.0 / 1024.0 / 1024.0);
 	}
-	
+
 	fprintf(stderr, "minimizer-lookup: %lld dp: %lld rmq: %lld rmq_t1: %lld rmq_t2: %lld rmq_t3: %lld rmq_t4: %lld alignment: %lld %lld\n", minimizer_lookup_time, dp_time, rmq_time, rmq_t1, rmq_t2, rmq_t3, rmq_t4, alignment_time, avg);
 #ifdef LISA_HASH
 	delete lh;
-#endif	
+#endif
 	return 0;
 }
