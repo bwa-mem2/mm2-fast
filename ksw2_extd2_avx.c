@@ -93,7 +93,7 @@ void ksw_extd2_avx512(void *km, int qlen, const uint8_t *query, int tlen,
     
     __m512i shf512a, shf512b, slli512;
     __m512i ind512_slli = _mm512_load_si512((__m512i*) index);
-    __mmask8 mska = 0x90;
+    const __mmask8 mska = 0x90;
     __mmask64 mskb = 0x0001000100010000;
     __mmask64 mskc = 0x1;
     __mmask64 mskc_ar[4] = {0x1, 0x10000, 0x100000000, 0x1000000000000};
@@ -933,7 +933,7 @@ void ksw_extd2_avx512_v1(void *km, int qlen, const uint8_t *query, int tlen, con
     
     __m512i shf512a, shf512b, slli512;
     __m512i ind512_slli = _mm512_load_si512((__m512i*) index);
-    __mmask8 mska = 0x90;
+    const __mmask8 mska = 0x90;
     __mmask64 mskb = 0x0001000100010000;
     __mmask64 mskc = 0x1;
     __mmask64 mskc_ar[4] = {0x1, 0x10000, 0x100000000, 0x1000000000000};
